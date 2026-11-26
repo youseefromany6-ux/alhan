@@ -1,6 +1,112 @@
 document.addEventListener('DOMContentLoaded', () => {
   // =========================================================================
-  // 1) قاعدة بيانات المتصفح (IndexedDB) لحفظ الأقسام والألحان والصور والصوت
+  // 1) إعدادات الربط السحابي (Supabase) وكلمة مرور المشرف
+  // =========================================================================
+  const SUPABASE_URL = 'https://rlsfeckgbgioawfhqnsn.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_MmoXwE-ftuEepyaE-mCCbw_ADxNy1hV';
+  const STORAGE_BUCKET = 'alhan-media';
+  const ADMIN_PASSCODE = '0123456789';
+
+  let isAdminUnlocked = sessionStorage.getItem('alhan_admin_unlocked') === 'true';
+
+  function verifyAdminAccess() {
+    if (isAdminUnlocked) return true;
+    const entered = window.prompt('أدخل الرقم السري للمشرف للمتابعة:');
+    if (entered === null) return false;
+    if (entered.trim() === ADMIN_PASSCODE) {
+      isAdminUnlocked = true;
+      sessionStorage.setItem('alhan_admin_unlocked', 'true');
+      return true;
+    }
+    window.alert('الرقم السري غير صحيح — التعديل متاح للمشرف فقط.');
+    return false;
+  }
+
+  function getSupabaseHeaders(extraHeaders = {}) {
+    return {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      ...extraHeaders
+    };
+  }
+
+  async function fetchCloudTable(tableName) {
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/${tableName}?select=*&order=updated_at.asc`,
+        {
+          method: 'GET',
+          headers: getSupabaseHeaders()
+        }
+      );
+      if (!response.ok) return null;
+      return await response.json();
+    } catch {
+      return null;
+    }
+  }
+
+  async function upsertCloudRecord(tableName, record) {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/${tableName}?on_conflict=id`,
+      {
+        method: 'POST',
+        headers: getSupabaseHeaders({
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=representation'
+        }),
+        body: JSON.stringify(record)
+      }
+    );
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`فشل الحفظ السحابي: ${errText}`);
+    }
+    return await response.json();
+  }
+
+  async function deleteCloudRecord(tableName, recordId) {
+    const encodedId = encodeURIComponent(recordId);
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/${tableName}?id=eq.${encodedId}`,
+      {
+        method: 'DELETE',
+        headers: getSupabaseHeaders()
+      }
+    );
+    if (!response.ok) {
+      throw new Error('فشل الحذف من السحابة');
+    }
+  }
+
+  async function uploadMediaToCloud(file, folderName) {
+    const safeExt = (file.name && file.name.includes('.'))
+      ? file.name.split('.').pop().replace(/[^a-zA-Z0-9]/g, '')
+      : 'bin';
+    const filePath = `${folderName}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
+
+    const response = await fetch(
+      `${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${filePath}`,
+      {
+        method: 'POST',
+        headers: getSupabaseHeaders({
+          'Content-Type': file.type || 'application/octet-stream',
+          'x-upsert': 'true'
+        }),
+        body: file
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`تعذّر رفع الملف: ${errText}`);
+    }
+
+    return `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${filePath}`;
+  }
+
+  // =========================================================================
+  // 2) قاعدة بيانات المتصفح الاحتياطية (IndexedDB) للعمل دون إنترنت
   // =========================================================================
   const DB_NAME = 'StGeorgeHymnsLibraryDB';
   const DB_VERSION = 2;
@@ -44,29 +150,37 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function saveToStore(storeName, record) {
-    const db = await openHymnsDatabase();
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, 'readwrite');
-      const store = tx.objectStore(storeName);
-      const req = store.put(record);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
-    });
+    try {
+      const db = await openHymnsDatabase();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        const req = store.put(record);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    } catch {
+      // تجاهل أخطاء التخزين المحلي عند توفر السحابة
+    }
   }
 
   async function deleteFromStore(storeName, recordId) {
-    const db = await openHymnsDatabase();
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, 'readwrite');
-      const store = tx.objectStore(storeName);
-      const req = store.delete(recordId);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
-    });
+    try {
+      const db = await openHymnsDatabase();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        const req = store.delete(recordId);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    } catch {
+      // تجاهل أخطاء التخزين المحلي عند توفر السحابة
+    }
   }
 
   // =========================================================================
-  // 2) الأقسام والألحان الأساسية الافتراضية
+  // 3) الأقسام والألحان الأساسية الافتراضية
   // =========================================================================
   const defaultBuiltInCategories = [
     {
@@ -164,7 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let isLiveSyncActive = false;
 
   // =========================================================================
-  // 3) عناصر الواجهة
+  // 4) عناصر الواجهة
   // =========================================================================
   const views = {
     home: document.getElementById('view-home'),
@@ -178,11 +292,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnBackToCategories = document.getElementById('btn-back-to-categories');
   const btnBackHymns = document.getElementById('btn-back-hymns');
 
-  // عناصر صفحة الأقسام
   const categoriesGrid = document.getElementById('categories-grid');
   const btnOpenAddCategory = document.getElementById('btn-open-add-category');
 
-  // عناصر نافذة إضافة/تعديل قسم
   const categoryModal = document.getElementById('category-editor-modal');
   const categoryModalBackdrop = document.getElementById('category-modal-backdrop');
   const categoryModalTitle = document.getElementById('category-modal-title');
@@ -196,7 +308,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnDeleteCategory = document.getElementById('btn-delete-category');
   let editingCategoryId = null;
 
-  // عناصر قائمة الألحان
   const hymnsListHeading = document.getElementById('hymns-list-heading');
   const hymnsListGrid = document.getElementById('hymns-list-grid');
   const hymnSearchInput = document.getElementById('hymn-search-input');
@@ -206,7 +317,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnOpenAddHymnMain = document.getElementById('btn-open-add-hymn-main');
   const btnEditCurrentHymn = document.getElementById('btn-edit-current-hymn');
 
-  // عناصر المزامنة المباشرة
   const btnStartLiveSync = document.getElementById('btn-start-live-sync');
   const liveSyncPanel = document.getElementById('live-sync-panel');
   const syncPanelStatus = document.getElementById('sync-panel-status');
@@ -214,7 +324,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCancelLiveSync = document.getElementById('btn-cancel-live-sync');
   const syncSavedToast = document.getElementById('sync-saved-toast');
 
-  // عناصر المشغل والعارض
   const lessonHeading = document.getElementById('lesson-heading');
   const pageCounter = document.getElementById('page-counter');
   const readerThumbs = document.getElementById('reader-thumbs');
@@ -230,13 +339,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const timeCurrent = document.getElementById('time-current');
   const timeDuration = document.getElementById('time-duration');
 
-  // عناصر تكبير الصورة
   const btnZoomIn = document.getElementById('btn-zoom-in');
   const btnZoomOut = document.getElementById('btn-zoom-out');
   const btnZoomReset = document.getElementById('btn-zoom-reset');
   const zoomLevelLabel = document.getElementById('zoom-level-label');
 
-  // عناصر نافذة إضافة وتعديل الألحان
   const editorModal = document.getElementById('hymn-editor-modal');
   const modalBackdrop = document.getElementById('modal-backdrop');
   const modalEditorTitle = document.getElementById('modal-editor-title');
@@ -257,7 +364,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let draftPages = [];
 
   // =========================================================================
-  // 4) إدارة الأقسام وعرضها (تعديل صورة واسم أي قسم + إضافة أقسام جديدة)
+  // 5) إدارة الأقسام وعرضها (مزامنة سحابية لكل الزوار + حفظ محلي احتياطي)
   // =========================================================================
   function getCategoryTitle(catId) {
     const found = allCategories.find((c) => c.id === catId);
@@ -275,7 +382,24 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function refreshCategoriesLibrary() {
-    const savedCategories = await loadAllFromStore(CATEGORIES_STORE);
+    const cloudRows = await fetchCloudTable('categories');
+    let savedCategories = [];
+
+    if (Array.isArray(cloudRows)) {
+      savedCategories = cloudRows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        desc: row.desc || '',
+        src: row.src || '',
+        isBuiltIn: Boolean(row.is_built_in)
+      }));
+      for (const item of savedCategories) {
+        await saveToStore(CATEGORIES_STORE, item);
+      }
+    } else {
+      savedCategories = await loadAllFromStore(CATEGORIES_STORE);
+    }
+
     const savedMap = new Map(savedCategories.map((item) => [item.id, item]));
 
     const merged = defaultBuiltInCategories.map((builtIn) =>
@@ -346,6 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       card.querySelector('.category-card__edit-btn').addEventListener('click', () => {
+        if (!verifyAdminAccess()) return;
         openCategoryModal(cat);
       });
 
@@ -363,7 +488,7 @@ document.addEventListener('DOMContentLoaded', () => {
       inputCategoryTitle.value = categoryToEdit.title;
       inputCategoryDesc.value = categoryToEdit.desc || '';
 
-      if (categoryToEdit.imageBlob instanceof Blob) {
+      if (categoryToEdit.src || categoryToEdit.imageBlob instanceof Blob) {
         currentCategoryImgHint.textContent = 'توجد صورة مرفوعة لهذا القسم (اختر صورة جديدة لاستبدالها أو اترك الخانة فارغة).';
         currentCategoryImgHint.hidden = false;
       } else {
@@ -388,12 +513,17 @@ document.addEventListener('DOMContentLoaded', () => {
     categoryModal.hidden = true;
   }
 
-  btnOpenAddCategory.addEventListener('click', () => openCategoryModal(null));
+  btnOpenAddCategory.addEventListener('click', () => {
+    if (!verifyAdminAccess()) return;
+    openCategoryModal(null);
+  });
   btnCloseCategoryModal.addEventListener('click', closeCategoryModal);
   categoryModalBackdrop.addEventListener('click', closeCategoryModal);
 
   categoryEditorForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!verifyAdminAccess()) return;
+
     const title = inputCategoryTitle.value.trim();
     if (!title) {
       categoryModalError.textContent = 'من فضلك اكتب اسم القسم أولاً.';
@@ -401,48 +531,78 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const existingCat = editingCategoryId
-      ? allCategories.find((c) => c.id === editingCategoryId)
-      : null;
-
-    const newImgFile = inputCategoryImage.files[0] || null;
-
-    const categoryRecord = {
-      id: editingCategoryId || `custom-cat-${Date.now()}`,
-      title,
-      desc: inputCategoryDesc.value.trim() || `ألحان وصفحات ${title}`,
-      src: existingCat ? existingCat.src || '' : '',
-      imageBlob: newImgFile || (existingCat ? existingCat.imageBlob || null : null),
-      isBuiltIn: existingCat ? Boolean(existingCat.isBuiltIn) : false
-    };
+    const submitBtn = categoryEditorForm.querySelector('button[type="submit"]');
+    const originalBtnText = submitBtn ? submitBtn.textContent : 'حفظ';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'جاري الرفع والحفظ لكل الزوار...';
+    }
+    categoryModalError.hidden = true;
 
     try {
-      await saveToStore(CATEGORIES_STORE, categoryRecord);
-      await refreshCategoriesLibrary();
-    } catch {
-      const idx = allCategories.findIndex((c) => c.id === categoryRecord.id);
-      if (idx !== -1) {
-        allCategories[idx] = categoryRecord;
-      } else {
-        allCategories.push(categoryRecord);
-      }
-      populateCategorySelect();
-    }
+      const existingCat = editingCategoryId
+        ? allCategories.find((c) => c.id === editingCategoryId)
+        : null;
 
-    renderCategoriesGrid();
-    closeCategoryModal();
+      const newImgFile = inputCategoryImage.files[0] || null;
+      let resolvedSrc = existingCat ? existingCat.src || '' : '';
+
+      if (newImgFile) {
+        resolvedSrc = await uploadMediaToCloud(newImgFile, 'categories');
+      }
+
+      const categoryId = editingCategoryId || `custom-cat-${Date.now()}`;
+      const descText = inputCategoryDesc.value.trim() || `ألحان وصفحات ${title}`;
+      const isBuiltInFlag = existingCat ? Boolean(existingCat.isBuiltIn) : false;
+
+      await upsertCloudRecord('categories', {
+        id: categoryId,
+        title,
+        desc: descText,
+        src: resolvedSrc,
+        is_built_in: isBuiltInFlag,
+        updated_at: new Date().toISOString()
+      });
+
+      const localCategoryRecord = {
+        id: categoryId,
+        title,
+        desc: descText,
+        src: resolvedSrc,
+        isBuiltIn: isBuiltInFlag
+      };
+
+      await saveToStore(CATEGORIES_STORE, localCategoryRecord);
+      await refreshCategoriesLibrary();
+      renderCategoriesGrid();
+      closeCategoryModal();
+    } catch (err) {
+      categoryModalError.textContent = `حدث خطأ أثناء الحفظ السحابي: ${err.message}`;
+      categoryModalError.hidden = false;
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalBtnText;
+      }
+    }
   });
 
   btnDeleteCategory.addEventListener('click', async () => {
-    if (!editingCategoryId) return;
-    await deleteFromStore(CATEGORIES_STORE, editingCategoryId);
-    await refreshCategoriesLibrary();
-    renderCategoriesGrid();
-    closeCategoryModal();
+    if (!editingCategoryId || !verifyAdminAccess()) return;
+    try {
+      await deleteCloudRecord('categories', editingCategoryId);
+      await deleteFromStore(CATEGORIES_STORE, editingCategoryId);
+      await refreshCategoriesLibrary();
+      renderCategoriesGrid();
+      closeCategoryModal();
+    } catch (err) {
+      categoryModalError.textContent = `تعذّر الحذف: ${err.message}`;
+      categoryModalError.hidden = false;
+    }
   });
 
   // =========================================================================
-  // 5) تكبير وتصغير الصورة نفسها فقط
+  // 6) تكبير وتصغير الصورة نفسها فقط
   // =========================================================================
   const zoomLevels = [100, 130, 160, 200, 240];
   let currentZoomIndex = 0;
@@ -474,10 +634,29 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // 6) دمج الألحان المحفوظة والافتراضية وعرض القائمة
+  // 7) دمج الألحان السحابية والافتراضية وعرض القائمة
   // =========================================================================
   async function refreshHymnsLibrary() {
-    const savedHymns = await loadAllFromStore(STORE_NAME);
+    const cloudRows = await fetchCloudTable('hymns');
+    let savedHymns = [];
+
+    if (Array.isArray(cloudRows)) {
+      savedHymns = cloudRows.map((row) => ({
+        id: row.id,
+        category: row.category || 'annual',
+        title: row.title,
+        subtitle: row.subtitle || '',
+        isBuiltIn: Boolean(row.is_built_in),
+        audioCandidates: Array.isArray(row.audio_candidates) ? row.audio_candidates : [],
+        pages: Array.isArray(row.pages) ? row.pages : []
+      }));
+      for (const item of savedHymns) {
+        await saveToStore(STORE_NAME, item);
+      }
+    } else {
+      savedHymns = await loadAllFromStore(STORE_NAME);
+    }
+
     const savedMap = new Map(savedHymns.map((item) => [item.id, item]));
 
     const merged = defaultBuiltInHymns.map((builtIn) =>
@@ -544,6 +723,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       card.querySelector('.hymn-item__edit-btn').addEventListener('click', () => {
+        if (!verifyAdminAccess()) return;
         openEditorModal(hymn);
       });
 
@@ -552,7 +732,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // =========================================================================
-  // 7) فتح اللحن في المشغل وربط الصوت بالصفحات
+  // 8) فتح اللحن في المشغل وربط الصوت بالصفحات
   // =========================================================================
   function clearActiveObjectUrls() {
     activeObjectUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -654,7 +834,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // =========================================================================
-  // 8) وضع المزامنة المباشرة بضغطة واحدة أثناء الاستماع
+  // 9) وضع المزامنة المباشرة بضغطة واحدة وحفظ التوقيتات على السحابة لكل الزوار
   // =========================================================================
   function updateLiveSyncButtonLabel() {
     if (!isLiveSyncActive) return;
@@ -671,6 +851,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function startLiveSyncMode() {
+    if (!verifyAdminAccess()) return;
+
     if (!activeHymn || activePages.length < 2) {
       syncSavedToast.textContent = 'يجب أن يحتوي اللحن على صفحتين على الأقل لضبط المزامنة.';
       syncSavedToast.hidden = false;
@@ -706,26 +888,38 @@ document.addEventListener('DOMContentLoaded', () => {
   async function saveSyncedTimingsToDB() {
     if (!activeHymn) return;
 
+    const cleanPages = activePages.map((p) => ({
+      pageNumber: p.pageNumber,
+      src: p.rawSrc || '',
+      startTime: p.startTime,
+      endTime: p.endTime,
+      caption: p.caption
+    }));
+
     const updatedRecord = {
       ...activeHymn,
-      pages: activePages.map((p) => ({
-        pageNumber: p.pageNumber,
-        src: p.rawSrc || '',
-        imageBlob: p.imageBlob || null,
-        startTime: p.startTime,
-        endTime: p.endTime,
-        caption: p.caption
-      }))
+      pages: cleanPages
     };
 
     try {
+      await upsertCloudRecord('hymns', {
+        id: updatedRecord.id,
+        category: updatedRecord.category || 'annual',
+        title: updatedRecord.title,
+        subtitle: updatedRecord.subtitle || '',
+        is_built_in: Boolean(updatedRecord.isBuiltIn),
+        audio_candidates: updatedRecord.audioCandidates || [],
+        pages: cleanPages,
+        updated_at: new Date().toISOString()
+      });
+
       await saveToStore(STORE_NAME, updatedRecord);
       activeHymn = updatedRecord;
       await refreshHymnsLibrary();
-      syncSavedToast.textContent = 'تم حفظ مزامنة الصوت مع جميع الصفحات بنجاح! ستتقلب الصفحات تلقائياً في كل مرة.';
+      syncSavedToast.textContent = 'تم حفظ مزامنة الصوت مع جميع الصفحات على السحابة بنجاح! ستظهر لكل الزوار تلقائياً.';
       syncSavedToast.hidden = false;
-    } catch {
-      syncSavedToast.textContent = 'تم تطبيق المزامنة في الجلسة الحالية.';
+    } catch (err) {
+      syncSavedToast.textContent = `تعذّر حفظ المزامنة سحابياً: ${err.message}`;
       syncSavedToast.hidden = false;
     }
   }
@@ -761,7 +955,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // 9) التنقل والتحكم في الصوت
+  // 10) التنقل والتحكم في الصوت
   // =========================================================================
   function showView(targetKey) {
     Object.entries(views).forEach(([key, section]) => {
@@ -930,7 +1124,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // 10) نافذة إضافة لحن جديد أو إضافة صفحات من داخل الموقع (Modal Builder)
+  // 11) نافذة إضافة لحن جديد أو إضافة صفحات ورفعها للسحابة
   // =========================================================================
   function secondsToMinSec(totalSeconds) {
     if (!Number.isFinite(totalSeconds) || totalSeconds >= 9999 || totalSeconds < 0) {
@@ -1102,9 +1296,16 @@ document.addEventListener('DOMContentLoaded', () => {
     editorModal.hidden = true;
   }
 
-  btnOpenAddHymnTop.addEventListener('click', () => openEditorModal(null));
-  btnOpenAddHymnMain.addEventListener('click', () => openEditorModal(null));
+  btnOpenAddHymnTop.addEventListener('click', () => {
+    if (!verifyAdminAccess()) return;
+    openEditorModal(null);
+  });
+  btnOpenAddHymnMain.addEventListener('click', () => {
+    if (!verifyAdminAccess()) return;
+    openEditorModal(null);
+  });
   btnEditCurrentHymn.addEventListener('click', () => {
+    if (!verifyAdminAccess()) return;
     if (activeHymn) openEditorModal(activeHymn);
   });
   btnCloseModal.addEventListener('click', closeEditorModal);
@@ -1160,6 +1361,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   editorForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!verifyAdminAccess()) return;
+
     const title = inputHymnTitle.value.trim();
     if (!title) {
       modalErrorMsg.textContent = 'من فضلك اكتب اسم اللحن أولاً.';
@@ -1174,65 +1377,106 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const existingHymn = editingHymnId
-      ? allHymns.find((h) => h.id === editingHymnId)
-      : null;
-
-    const formattedPages = validPages.map((p, idx) => {
-      const startSeconds = (Number(p.startMin) || 0) * 60 + (Number(p.startSec) || 0);
-      const hasEnd = p.endMin !== '' || p.endSec !== '';
-      const rawEnd = (Number(p.endMin) || 0) * 60 + (Number(p.endSec) || 0);
-      const endSeconds = hasEnd && rawEnd > startSeconds ? rawEnd : 9999;
-
-      return {
-        pageNumber: p.pageNumber.trim() || String(idx + 1),
-        src: p.src || '',
-        imageBlob: p.imageBlob || null,
-        startTime: startSeconds,
-        endTime: endSeconds,
-        caption: p.caption || `${title} — صفحة ${p.pageNumber.trim() || idx + 1}`
-      };
-    });
-
-    const newAudioFile = inputHymnAudio.files[0] || null;
-
-    const hymnRecord = {
-      id: editingHymnId || `custom-hymn-${Date.now()}`,
-      category: inputHymnCategory.value,
-      title,
-      subtitle: inputHymnSubtitle.value.trim() || `${formattedPages.length} صفحات`,
-      isBuiltIn: existingHymn ? Boolean(existingHymn.isBuiltIn) : false,
-      audioCandidates: existingHymn ? existingHymn.audioCandidates || [] : [],
-      audioBlob: newAudioFile || (existingHymn ? existingHymn.audioBlob || null : null),
-      pages: formattedPages
-    };
+    const submitBtn = editorForm.querySelector('button[type="submit"]');
+    const originalBtnText = submitBtn ? submitBtn.textContent : 'حفظ اللحن';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'جاري رفع الصور والصوت لكل الزوار...';
+    }
+    modalErrorMsg.hidden = true;
 
     try {
+      const existingHymn = editingHymnId
+        ? allHymns.find((h) => h.id === editingHymnId)
+        : null;
+
+      const formattedPages = [];
+      for (let idx = 0; idx < validPages.length; idx += 1) {
+        const p = validPages[idx];
+        const startSeconds = (Number(p.startMin) || 0) * 60 + (Number(p.startSec) || 0);
+        const hasEnd = p.endMin !== '' || p.endSec !== '';
+        const rawEnd = (Number(p.endMin) || 0) * 60 + (Number(p.endSec) || 0);
+        const endSeconds = hasEnd && rawEnd > startSeconds ? rawEnd : 9999;
+
+        let resolvedPageSrc = p.src || '';
+        if (p.imageBlob instanceof Blob) {
+          resolvedPageSrc = await uploadMediaToCloud(p.imageBlob, 'pages');
+        }
+
+        formattedPages.push({
+          pageNumber: p.pageNumber.trim() || String(idx + 1),
+          src: resolvedPageSrc,
+          startTime: startSeconds,
+          endTime: endSeconds,
+          caption: p.caption || `${title} — صفحة ${p.pageNumber.trim() || idx + 1}`
+        });
+      }
+
+      const newAudioFile = inputHymnAudio.files[0] || null;
+      let resolvedAudioCandidates = existingHymn ? [...(existingHymn.audioCandidates || [])] : [];
+
+      if (newAudioFile) {
+        const uploadedAudioUrl = await uploadMediaToCloud(newAudioFile, 'audio');
+        resolvedAudioCandidates = [uploadedAudioUrl];
+      }
+
+      const hymnId = editingHymnId || `custom-hymn-${Date.now()}`;
+      const hymnSubtitle = inputHymnSubtitle.value.trim() || `${formattedPages.length} صفحات`;
+      const isBuiltInFlag = existingHymn ? Boolean(existingHymn.isBuiltIn) : false;
+
+      await upsertCloudRecord('hymns', {
+        id: hymnId,
+        category: inputHymnCategory.value,
+        title,
+        subtitle: hymnSubtitle,
+        is_built_in: isBuiltInFlag,
+        audio_candidates: resolvedAudioCandidates,
+        pages: formattedPages,
+        updated_at: new Date().toISOString()
+      });
+
+      const hymnRecord = {
+        id: hymnId,
+        category: inputHymnCategory.value,
+        title,
+        subtitle: hymnSubtitle,
+        isBuiltIn: isBuiltInFlag,
+        audioCandidates: resolvedAudioCandidates,
+        pages: formattedPages
+      };
+
       await saveToStore(STORE_NAME, hymnRecord);
       await refreshHymnsLibrary();
-    } catch {
-      const idx = allHymns.findIndex((h) => h.id === hymnRecord.id);
-      if (idx !== -1) {
-        allHymns[idx] = hymnRecord;
-      } else {
-        allHymns.push(hymnRecord);
+
+      activeCategory = hymnRecord.category;
+      hymnsListHeading.textContent = getCategoryTitle(activeCategory);
+      renderHymnsList(hymnSearchInput.value);
+      closeEditorModal();
+      openHymnInPlayer(hymnRecord);
+    } catch (err) {
+      modalErrorMsg.textContent = `حدث خطأ أثناء الرفع والحفظ السحابي: ${err.message}`;
+      modalErrorMsg.hidden = false;
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalBtnText;
       }
     }
-
-    activeCategory = hymnRecord.category;
-    hymnsListHeading.textContent = getCategoryTitle(activeCategory);
-    renderHymnsList(hymnSearchInput.value);
-    closeEditorModal();
-    openHymnInPlayer(hymnRecord);
   });
 
   btnDeleteHymn.addEventListener('click', async () => {
-    if (!editingHymnId) return;
-    await deleteFromStore(STORE_NAME, editingHymnId);
-    await refreshHymnsLibrary();
-    renderHymnsList(hymnSearchInput.value);
-    closeEditorModal();
-    showView('hymnsList');
+    if (!editingHymnId || !verifyAdminAccess()) return;
+    try {
+      await deleteCloudRecord('hymns', editingHymnId);
+      await deleteFromStore(STORE_NAME, editingHymnId);
+      await refreshHymnsLibrary();
+      renderHymnsList(hymnSearchInput.value);
+      closeEditorModal();
+      showView('hymnsList');
+    } catch (err) {
+      modalErrorMsg.textContent = `تعذّر حذف اللحن: ${err.message}`;
+      modalErrorMsg.hidden = false;
+    }
   });
 
   document.querySelectorAll('img[data-fallback]').forEach((img) => {
