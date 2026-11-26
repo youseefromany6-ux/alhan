@@ -30,6 +30,57 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
+  // ضغط الصور تلقائياً لتقليل الحجم بنسبة 85% ومنع تهنيج المتصفح
+  function compressImageFile(file, maxDimension = 1280, quality = 0.8) {
+    return new Promise((resolve) => {
+      if (!file || !file.type.startsWith('image/')) {
+        resolve(file);
+        return;
+      }
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        let { width, height } = img;
+        if (width <= maxDimension && height <= maxDimension && file.size < 350 * 1024) {
+          resolve(file);
+          return;
+        }
+        if (width > height && width > maxDimension) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else if (height > maxDimension) {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file);
+              return;
+            }
+            const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+              type: 'image/jpeg'
+            });
+            resolve(compressedFile);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(file);
+      };
+      img.src = objectUrl;
+    });
+  }
+
   async function fetchCloudTable(tableName) {
     try {
       const response = await fetch(
@@ -80,8 +131,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function uploadMediaToCloud(file, folderName) {
-    const safeExt = (file.name && file.name.includes('.'))
-      ? file.name.split('.').pop().replace(/[^a-zA-Z0-9]/g, '')
+    const fileToUpload = file.type && file.type.startsWith('image/')
+      ? await compressImageFile(file)
+      : file;
+
+    const safeExt = (fileToUpload.name && fileToUpload.name.includes('.'))
+      ? fileToUpload.name.split('.').pop().replace(/[^a-zA-Z0-9]/g, '')
       : 'bin';
     const filePath = `${folderName}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
 
@@ -90,10 +145,10 @@ document.addEventListener('DOMContentLoaded', () => {
       {
         method: 'POST',
         headers: getSupabaseHeaders({
-          'Content-Type': file.type || 'application/octet-stream',
+          'Content-Type': fileToUpload.type || 'application/octet-stream',
           'x-upsert': 'true'
         }),
-        body: file
+        body: fileToUpload
       }
     );
 
@@ -106,7 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // =========================================================================
-  // 2) قاعدة بيانات المتصفح الاحتياطية (IndexedDB) للعمل دون إنترنت
+  // 2) قاعدة بيانات المتصفح الاحتياطية (IndexedDB)
   // =========================================================================
   const DB_NAME = 'StGeorgeHymnsLibraryDB';
   const DB_VERSION = 2;
@@ -160,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
         req.onerror = () => reject(req.error);
       });
     } catch {
-      // تجاهل أخطاء التخزين المحلي عند توفر السحابة
+      // تجاهل أخطاء التخزين المحلي
     }
   }
 
@@ -175,7 +230,7 @@ document.addEventListener('DOMContentLoaded', () => {
         req.onerror = () => reject(req.error);
       });
     } catch {
-      // تجاهل أخطاء التخزين المحلي عند توفر السحابة
+      // تجاهل أخطاء التخزين المحلي
     }
   }
 
@@ -275,6 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let flipTimer = null;
   let activeObjectUrls = [];
   let categoryObjectUrls = [];
+  let draftPreviewUrls = [];
   let isLiveSyncActive = false;
 
   // =========================================================================
@@ -364,7 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let draftPages = [];
 
   // =========================================================================
-  // 5) إدارة الأقسام وعرضها (مزامنة سحابية لكل الزوار + حفظ محلي احتياطي)
+  // 5) إدارة الأقسام وعرضها
   // =========================================================================
   function getCategoryTitle(catId) {
     const found = allCategories.find((c) => c.id === catId);
@@ -393,9 +449,6 @@ document.addEventListener('DOMContentLoaded', () => {
         src: row.src || '',
         isBuiltIn: Boolean(row.is_built_in)
       }));
-      for (const item of savedCategories) {
-        await saveToStore(CATEGORIES_STORE, item);
-      }
     } else {
       savedCategories = await loadAllFromStore(CATEGORIES_STORE);
     }
@@ -419,7 +472,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderCategoriesGrid() {
     categoryObjectUrls.forEach((url) => URL.revokeObjectURL(url));
     categoryObjectUrls = [];
-    categoriesGrid.innerHTML = '';
+    const fragment = document.createDocumentFragment();
 
     allCategories.forEach((cat) => {
       const card = document.createElement('article');
@@ -433,7 +486,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const mediaHtml = resolvedImgSrc
-        ? `<img src="${resolvedImgSrc}" alt="${cat.title}" class="category-card__img">`
+        ? `<img src="${resolvedImgSrc}" alt="${cat.title}" class="category-card__img" loading="lazy" decoding="async">`
         : `<div class="img--fallback">${cat.title}</div>`;
 
       card.innerHTML = `
@@ -474,8 +527,11 @@ document.addEventListener('DOMContentLoaded', () => {
         openCategoryModal(cat);
       });
 
-      categoriesGrid.appendChild(card);
+      fragment.appendChild(card);
     });
+
+    categoriesGrid.innerHTML = '';
+    categoriesGrid.appendChild(fragment);
   }
 
   function openCategoryModal(categoryToEdit = null) {
@@ -564,15 +620,14 @@ document.addEventListener('DOMContentLoaded', () => {
         updated_at: new Date().toISOString()
       });
 
-      const localCategoryRecord = {
+      await saveToStore(CATEGORIES_STORE, {
         id: categoryId,
         title,
         desc: descText,
         src: resolvedSrc,
         isBuiltIn: isBuiltInFlag
-      };
+      });
 
-      await saveToStore(CATEGORIES_STORE, localCategoryRecord);
       await refreshCategoriesLibrary();
       renderCategoriesGrid();
       closeCategoryModal();
@@ -602,7 +657,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // 6) تكبير وتصغير الصورة نفسها فقط
+  // 6) تكبير وتصغير الصورة
   // =========================================================================
   const zoomLevels = [100, 130, 160, 200, 240];
   let currentZoomIndex = 0;
@@ -634,7 +689,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // 7) دمج الألحان السحابية والافتراضية وعرض القائمة
+  // 7) دمج الألحان وعرض القائمة
   // =========================================================================
   async function refreshHymnsLibrary() {
     const cloudRows = await fetchCloudTable('hymns');
@@ -650,9 +705,6 @@ document.addEventListener('DOMContentLoaded', () => {
         audioCandidates: Array.isArray(row.audio_candidates) ? row.audio_candidates : [],
         pages: Array.isArray(row.pages) ? row.pages : []
       }));
-      for (const item of savedHymns) {
-        await saveToStore(STORE_NAME, item);
-      }
     } else {
       savedHymns = await loadAllFromStore(STORE_NAME);
     }
@@ -693,6 +745,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     hymnListNotice.hidden = true;
+    const fragment = document.createDocumentFragment();
 
     filtered.forEach((hymn, index) => {
       const card = document.createElement('article');
@@ -727,12 +780,14 @@ document.addEventListener('DOMContentLoaded', () => {
         openEditorModal(hymn);
       });
 
-      hymnsListGrid.appendChild(card);
+      fragment.appendChild(card);
     });
+
+    hymnsListGrid.appendChild(fragment);
   }
 
   // =========================================================================
-  // 8) فتح اللحن في المشغل وربط الصوت بالصفحات
+  // 8) فتح اللحن في المشغل
   // =========================================================================
   function clearActiveObjectUrls() {
     activeObjectUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -782,7 +837,7 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     });
 
-    readerThumbs.innerHTML = '';
+    const thumbsFragment = document.createDocumentFragment();
     activePages.forEach((page, idx) => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -793,8 +848,10 @@ document.addEventListener('DOMContentLoaded', () => {
         setActivePage(idx, true);
         jumpToTimeAndPlay(page.startTime);
       });
-      readerThumbs.appendChild(btn);
+      thumbsFragment.appendChild(btn);
     });
+    readerThumbs.innerHTML = '';
+    readerThumbs.appendChild(thumbsFragment);
 
     audio.pause();
     updatePlayButtonLabel();
@@ -834,7 +891,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // =========================================================================
-  // 9) وضع المزامنة المباشرة بضغطة واحدة وحفظ التوقيتات على السحابة لكل الزوار
+  // 9) وضع المزامنة المباشرة
   // =========================================================================
   function updateLiveSyncButtonLabel() {
     if (!isLiveSyncActive) return;
@@ -916,7 +973,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await saveToStore(STORE_NAME, updatedRecord);
       activeHymn = updatedRecord;
       await refreshHymnsLibrary();
-      syncSavedToast.textContent = 'تم حفظ مزامنة الصوت مع جميع الصفحات على السحابة بنجاح! ستظهر لكل الزوار تلقائياً.';
+      syncSavedToast.textContent = 'تم حفظ مزامنة الصوت مع جميع الصفحات على السحابة بنجاح!';
       syncSavedToast.hidden = false;
     } catch (err) {
       syncSavedToast.textContent = `تعذّر حفظ المزامنة سحابياً: ${err.message}`;
@@ -955,7 +1012,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // 10) التنقل والتحكم في الصوت
+  // 10) التنقل والتحكم في الصوت (بدون مؤقتات ثقيلة)
   // =========================================================================
   function showView(targetKey) {
     Object.entries(views).forEach(([key, section]) => {
@@ -1111,12 +1168,6 @@ document.addEventListener('DOMContentLoaded', () => {
   audio.addEventListener('pause', updatePlayButtonLabel);
   audio.addEventListener('ended', updatePlayButtonLabel);
 
-  window.setInterval(() => {
-    if (!audio.paused) {
-      syncPageWithAudio();
-    }
-  }, 150);
-
   scrubber.addEventListener('input', () => {
     const newTime = Number(scrubber.value);
     audio.currentTime = newTime;
@@ -1124,7 +1175,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // 11) نافذة إضافة لحن جديد أو إضافة صفحات ورفعها للسحابة
+  // 11) نافذة إضافة لحن جديد أو إضافة صفحات
   // =========================================================================
   function secondsToMinSec(totalSeconds) {
     if (!Number.isFinite(totalSeconds) || totalSeconds >= 9999 || totalSeconds < 0) {
@@ -1136,8 +1187,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
+  function clearDraftPreviewUrls() {
+    draftPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    draftPreviewUrls = [];
+  }
+
   function renderDraftPagesList() {
-    pagesBuilderList.innerHTML = '';
+    clearDraftPreviewUrls();
+    const fragment = document.createDocumentFragment();
 
     draftPages.forEach((page, idx) => {
       const row = document.createElement('div');
@@ -1146,11 +1203,12 @@ document.addEventListener('DOMContentLoaded', () => {
       let previewUrl = page.src || '';
       if (page.imageBlob instanceof Blob) {
         previewUrl = URL.createObjectURL(page.imageBlob);
+        draftPreviewUrls.push(previewUrl);
       }
 
       row.innerHTML = `
         <div class="page-row__top">
-          <img src="${previewUrl}" alt="معاينة الصفحة" class="page-row__preview">
+          <img src="${previewUrl}" alt="معاينة الصفحة" class="page-row__preview" loading="lazy">
           <div class="page-row__meta">
             <input
               type="text"
@@ -1194,7 +1252,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const file = e.target.files[0];
         if (file) {
           draftPages[idx].imageBlob = file;
-          row.querySelector('.page-row__preview').src = URL.createObjectURL(file);
+          const url = URL.createObjectURL(file);
+          draftPreviewUrls.push(url);
+          row.querySelector('.page-row__preview').src = url;
         }
       });
 
@@ -1225,8 +1285,11 @@ document.addEventListener('DOMContentLoaded', () => {
         renderDraftPagesList();
       });
 
-      pagesBuilderList.appendChild(row);
+      fragment.appendChild(row);
     });
+
+    pagesBuilderList.innerHTML = '';
+    pagesBuilderList.appendChild(fragment);
   }
 
   function openEditorModal(hymnToEdit = null) {
@@ -1293,6 +1356,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function closeEditorModal() {
+    clearDraftPreviewUrls();
     editorModal.hidden = true;
   }
 
@@ -1381,7 +1445,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const originalBtnText = submitBtn ? submitBtn.textContent : 'حفظ اللحن';
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.textContent = 'جاري رفع الصور والصوت لكل الزوار...';
+      submitBtn.textContent = 'جاري ضغط ورفع الملفات...';
     }
     modalErrorMsg.hidden = true;
 
