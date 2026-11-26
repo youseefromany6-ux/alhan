@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>تعليم ألحان كنيسة الشهيد العظيم مارجرجس</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@700&family=Cairo:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="app">
+
+  <!-- الصفحة الأولى: الواجهة الرئيسية -->
+  <main id="view-home" class="view view--active hero" aria-labelledby="main-title">
+    <div class="hero__card">
+      <div class="hero__emblem">
+        <svg class="hero__arch-svg" viewBox="0 0 340 340" aria-hidden="true">
+          <defs>
+            <path id="st-george-arch" d="M 34,185 A 136,136 0 0,1 306,185" />
+          </defs>
+          <text class="hero__arch-text" dir="rtl">
+            <textPath href="#st-george-arch" startOffset="50%" text-anchor="middle">
+              تعليم ألحان كنيسة الشهيد العظيم مارجرجس
+            </textPath>
+          </text>
+        </svg>
+
+        <figure class="hero__portrait">
+          <img
+            src="assets/images/OIP.webp"
+            alt="أيقونة الشهيد العظيم مارجرجس"
+            class="hero__portrait-img"
+            data-fallback="مارجرجس"
+          >
+        </figure>
+      </div>
+
+      <h1 id="main-title" class="sr-only">تعليم ألحان كنيسة الشهيد العظيم مارجرجس</h1>
+
+      <button type="button" id="btn-enter" class="hero__cta">
+        دخول
+      </button>
+    </div>
+<p class="home-credit">
+  <span class="home-credit__label">إعداد المهندس</span>
+  <span class="home-credit__name">يوسف روماني</span>
+</p>
+  
+    </main>
+
+
+  <!-- الصفحة الثانية: أقسام التعليم الكنسي + زرار إضافة قسم جديد -->
+  <section id="view-categories" class="view dashboard" aria-labelledby="categories-heading" hidden>
+    <header class="topbar">
+      <div class="topbar__inner">
+        <button type="button" id="btn-back-home" class="topbar__back" aria-label="العودة إلى الصفحة الرئيسية">
+          الرئيسية
+        </button>
+        <h2 id="categories-heading" class="topbar__title">أقسام التعليم الكنسي</h2>
+        <button type="button" id="btn-open-add-category" class="topbar__action">
+          + إضافة قسم جديد
+        </button>
+      </div>
+    </header>
+
+    <div class="dashboard__container">
+      <div id="categories-grid" class="categories" role="list">
+        <!-- يتم عرض الأقسام الأساسية والأقسام المضافة تلقائياً من ملف script.js -->
+      </div>
+    </div>
+  </section>
+
+  <!-- الصفحة الثالثة: قائمة الألحان داخل القسم + زرار إضافة لحن جديد -->
+  <section id="view-hymns-list" class="view hymns-directory" aria-labelledby="hymns-list-heading" hidden>
+    <header class="topbar">
+      <div class="topbar__inner">
+        <button type="button" id="btn-back-to-categories" class="topbar__back" aria-label="العودة إلى الأقسام">
+          الأقسام
+        </button>
+        <h2 id="hymns-list-heading" class="topbar__title">الألحان السنوية</h2>
+        <button type="button" id="btn-open-add-hymn" class="topbar__action">
+          + إضافة لحن جديد
+        </button>
+      </div>
+    </header>
+
+    <div class="hymns-directory__container">
+      <div class="hymns-directory__toolbar">
+        <div class="hymns-directory__search-box">
+          <label for="hymn-search-input" class="sr-only">ابحث عن اسم اللحن</label>
+          <input
+            type="search"
+            id="hymn-search-input"
+            class="hymns-directory__search-input"
+            placeholder="ابحث باسم اللحن..."
+          >
+        </div>
+        <button type="button" id="btn-open-add-hymn-main" class="btn-add-primary">
+          + إضافة لحن وصفحات جديدة
+        </button>
+      </div>
+
+      <div id="hymns-list-grid" class="hymns-list" role="list">
+        <!-- يتم عرض الألحان تلقائياً من ملف script.js -->
+      </div>
+
+      <p id="hymn-list-notice" class="dashboard__notice" role="status" aria-live="polite" hidden></p>
+    </div>
+  </section>
+
+  <!-- الصفحة الرابعة: عارض صفحات اللحن بتصميم جانبي منظم -->
+  <section id="view-player" class="view player-view" aria-labelledby="lesson-heading" hidden>
+    <header class="topbar">
+      <div class="topbar__inner topbar__inner--wide">
+        <button type="button" id="btn-back-hymns" class="topbar__back" aria-label="العودة إلى قائمة الألحان">
+          قائمة الألحان
+        </button>
+        <h2 id="lesson-heading" class="topbar__title">الهوس الأول ولُبشه</h2>
+        <span id="page-counter" class="topbar__badge" aria-live="polite">صفحة ١٩</span>
+      </div>
+    </header>
+
+    <div class="reader">
+      <!-- المساحة الرئيسية لعرض صفحة اللحن -->
+      <div class="reader__main">
+        <figure class="reader__stage">
+          <div id="reader-viewport" class="reader__viewport">
+            <img
+              id="manuscript-image"
+              src="assets/images/19.jpeg"
+              alt="نص اللحن"
+              class="reader__page-img reader__page-img--zoom-100"
+            >
+          </div>
+
+          <figcaption id="verse-caption" class="reader__caption" aria-live="polite">
+            توتيه آفهوس إنجيه مويسيس — حينئذٍ سبّح موسى
+          </figcaption>
+        </figure>
+      </div>
+
+      <!-- الشريط الجانبي (على جنب) لكل الإعدادات والتحكم -->
+      <aside class="reader__sidebar" aria-label="لوحة التحكم وإعدادات اللحن">
+
+        <!-- 1. بطاقة الصوت -->
+        <section class="sidebar-card" aria-labelledby="sidebar-audio-title">
+          <header class="sidebar-card__header">
+            <h3 id="sidebar-audio-title" class="sidebar-card__title">التشغيل الصوتي</h3>
+          </header>
+
+          <audio id="hymn-audio" class="audio-dock__native" preload="auto"></audio>
+
+          <p id="audio-status-msg" class="audio-dock__error" role="alert" hidden></p>
+
+          <div class="audio-dock__timeline">
+            <span id="time-current" class="audio-dock__time">00:00</span>
+            <input
+              type="range"
+              id="audio-scrubber"
+              class="audio-dock__scrubber"
+              min="0"
+              max="554"
+              value="0"
+              step="0.1"
+              aria-label="شريط التقدم الصوتي"
+            >
+            <span id="time-duration" class="audio-dock__time">09:14</span>
+          </div>
+
+          <div class="sidebar-card__btn-group">
+            <button type="button" id="btn-play-pause" class="audio-dock__btn audio-dock__btn--primary" aria-label="تشغيل أو إيقاف الصوت">
+              تشغيل الصوت
+            </button>
+            <button type="button" id="btn-replay-page" class="audio-dock__btn" aria-label="إعادة الصفحة الحالية من بدايتها">
+              إعادة الصفحة
+            </button>
+          </div>
+        </section>
+
+        <!-- 2. بطاقة صفحات اللحن -->
+        <section class="sidebar-card" aria-labelledby="sidebar-pages-title">
+          <header class="sidebar-card__header">
+            <h3 id="sidebar-pages-title" class="sidebar-card__title">صفحات اللحن</h3>
+          </header>
+
+          <nav id="reader-thumbs" class="reader__thumbs" aria-label="صفحات اللحن">
+            <!-- تُولّد أزرار الصفحات تلقائياً -->
+          </nav>
+        </section>
+
+        <!-- 3. بطاقة تكبير الصورة -->
+        <section class="sidebar-card" aria-labelledby="sidebar-zoom-title">
+          <header class="sidebar-card__header">
+            <h3 id="sidebar-zoom-title" class="sidebar-card__title">حجم الصورة</h3>
+            <span id="zoom-level-label" class="reader__zoom-badge" aria-live="polite">100%</span>
+          </header>
+
+          <div class="reader__zoom-bar" role="toolbar" aria-label="تكبير وتصغير الصورة">
+            <button type="button" id="btn-zoom-in" class="reader__zoom-btn reader__zoom-btn--primary" aria-label="تكبير الصورة">
+              تكبير +
+            </button>
+            <button type="button" id="btn-zoom-out" class="reader__zoom-btn" aria-label="تصغير الصورة" disabled>
+              تصغير -
+            </button>
+            <button type="button" id="btn-zoom-reset" class="reader__zoom-btn" aria-label="إعادة الصورة لحجمها الطبيعي">
+              طبيعي
+            </button>
+          </div>
+        </section>
+
+        <!-- 4. بطاقة المزامنة وإدارة الصفحات -->
+        <section class="sidebar-card" aria-labelledby="sidebar-tools-title">
+          <header class="sidebar-card__header">
+            <h3 id="sidebar-tools-title" class="sidebar-card__title">إعدادات اللحن</h3>
+          </header>
+
+          <div class="sidebar-card__stack">
+            <button type="button" id="btn-start-live-sync" class="reader__sync-btn">
+              ضبط المزامنة مع الصوت
+            </button>
+            <button type="button" id="btn-edit-current-hymn" class="reader__manage-btn">
+              + إضافة صفحات / تعديل اللحن
+            </button>
+          </div>
+
+          <div id="live-sync-panel" class="sync-panel" role="region" aria-label="ضبط المزامنة المباشرة" hidden>
+            <div class="sync-panel__info">
+              <span class="sync-panel__badge">وضع المزامنة المباشر</span>
+              <p id="sync-panel-status" class="sync-panel__text">
+                اسمع الصوت، وأول ما آخر كلمة في الصفحة الحالية تخلص اضغط الزرار لقلب وحفظ توقيت الصفحة التالية:
+              </p>
+            </div>
+            <div class="sync-panel__actions">
+              <button type="button" id="btn-sync-next-page" class="sync-panel__next-btn">
+                انتهت الصفحة — انتقل للتالية (00:00)
+              </button>
+              <button type="button" id="btn-cancel-live-sync" class="sync-panel__cancel-btn">
+                إلغاء
+              </button>
+            </div>
+          </div>
+
+          <p id="sync-saved-toast" class="sync-toast" role="status" aria-live="polite" hidden></p>
+        </section>
+
+      </aside>
+    </div>
+  </section>
+
+  <!-- نافذة إضافة أو تعديل قسم جديد -->
+  <div id="category-editor-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="category-modal-title" hidden>
+    <div class="modal__backdrop" id="category-modal-backdrop"></div>
+    <div class="modal__dialog modal__dialog--compact">
+      <header class="modal__header">
+        <h3 id="category-modal-title" class="modal__title">إضافة قسم جديد</h3>
+        <button type="button" id="btn-close-category-modal" class="modal__close" aria-label="إغلاق النافذة">
+          إغلاق
+        </button>
+      </header>
+
+      <form id="category-editor-form" class="modal__body">
+        <div class="form-group">
+          <label for="input-category-title" class="form-label">اسم القسم *</label>
+          <input
+            type="text"
+            id="input-category-title"
+            class="form-control"
+            placeholder="مثال: ألحان كيهك أو ألحان البصخة"
+            required
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="input-category-desc" class="form-label">وصف القسم</label>
+          <input
+            type="text"
+            id="input-category-desc"
+            class="form-control"
+            placeholder="مثال: تسبحة وألحان شهر كيهك المبارك"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="input-category-image" class="form-label">صورة القسم (اختياري)</label>
+          <input
+            type="file"
+            id="input-category-image"
+            class="form-control form-control--file"
+            accept="image/*"
+          >
+          <p id="current-category-img-hint" class="form-hint" hidden></p>
+        </div>
+
+        <p id="category-modal-error" class="modal__error" role="alert" hidden></p>
+
+        <footer class="modal__footer">
+          <button type="submit" id="btn-save-category" class="btn-save">
+            حفظ القسم
+          </button>
+          <button type="button" id="btn-delete-category" class="btn-danger" hidden>
+            حذف القسم
+          </button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <!-- نافذة إضافة لحن جديد أو إضافة صفحات من داخل الموقع -->
+  <div id="hymn-editor-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-editor-title" hidden>
+    <div class="modal__backdrop" id="modal-backdrop"></div>
+    <div class="modal__dialog">
+      <header class="modal__header">
+        <h3 id="modal-editor-title" class="modal__title">إضافة لحن جديد</h3>
+        <button type="button" id="btn-close-modal" class="modal__close" aria-label="إغلاق النافذة">
+          إغلاق
+        </button>
+      </header>
+
+      <form id="hymn-editor-form" class="modal__body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="input-hymn-category" class="form-label">القسم</label>
+            <select id="input-hymn-category" class="form-control">
+              <!-- تُعبأ جميع الأقسام تلقائياً من ملف script.js -->
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="input-hymn-title" class="form-label">اسم اللحن *</label>
+            <input
+              type="text"
+              id="input-hymn-title"
+              class="form-control"
+              placeholder="مثال: الهوس الثاني ولُبشه"
+              required
+            >
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="input-hymn-subtitle" class="form-label">وصف مختصر (اختياري)</label>
+          <input
+            type="text"
+            id="input-hymn-subtitle"
+            class="form-control"
+            placeholder="مثال: تسبحة نصف الليل"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="input-hymn-audio" class="form-label">ملف الصوت (MP3 أو M4A)</label>
+          <input
+            type="file"
+            id="input-hymn-audio"
+            class="form-control form-control--file"
+            accept="audio/*"
+          >
+          <p id="current-audio-hint" class="form-hint" hidden></p>
+        </div>
+
+        <div class="pages-builder">
+          <div class="pages-builder__header">
+            <h4 class="pages-builder__title">صفحات اللحن</h4>
+            <div class="pages-builder__actions">
+              <label for="input-bulk-images" class="btn-secondary btn-secondary--gold">
+                + اختيار عدة صور معاً
+              </label>
+              <input
+                type="file"
+                id="input-bulk-images"
+                class="sr-only"
+                accept="image/*"
+                multiple
+              >
+              <button type="button" id="btn-add-single-page" class="btn-secondary">
+                + إضافة صفحة واحدة
+              </button>
+            </div>
+          </div>
+
+          <p class="pages-builder__tip">
+            اختر صور الصفحات واحفظ اللحن، وبعدها اضغط على زرار «ضبط المزامنة مع الصوت» لتقليب الصفحات وحفظ توقيتها بضغطة واحدة أثناء الاستماع.
+          </p>
+
+          <div id="pages-builder-list" class="pages-builder__list">
+            <!-- صفوف الصفحات المضافة تظهر هنا -->
+          </div>
+        </div>
+
+        <p id="modal-error-msg" class="modal__error" role="alert" hidden></p>
+
+        <footer class="modal__footer">
+          <button type="submit" id="btn-save-hymn" class="btn-save">
+            حفظ اللحن والصفحات
+          </button>
+          <button type="button" id="btn-delete-hymn" class="btn-danger" hidden>
+            حذف اللحن
+          </button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
